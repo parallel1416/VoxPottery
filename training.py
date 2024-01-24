@@ -29,7 +29,8 @@ def CVAE_loss(z, x, mean, logstd):
     mse = MSEcriterion(x, z)
     var = torch.pow(torch.exp(logstd), 2)
     kld = -0.5 * torch.sum(1 + torch.log(var) - torch.pow(mean, 2) - var)
-    return mse+kld
+    return mse + kld
+
 
 def main():
     # Here is a simple demonstration argparse, you may customize your own implementations, and
@@ -47,52 +48,95 @@ def main():
     # 11. test result save dir
     # 12. device!
     # .... (maybe there exists more hyperparams to be appointed)
-    n_labels=11
-    resolution=32
-    z_latent_space=1024
-    parser = argparse.ArgumentParser(description='An example script with command-line arguments.')
-    #TODO (TO MODIFY, NOT CORRECT)
-    # 添加一个命令行参数
-    parser.add_argument('--input_file', type=str, help='Path to the input file.')
-    # TODO
-    # 添加一个可选的布尔参数
-    parser.add_argument('--verbose', action='store_true', help='Enable verbose mode.')
-    # TODO
-    # 解析命令行参数
-    args = parser.parse_args()
-    
-    ### Initialize train and test dataset
-    ## for example,
-    dt = FragmentDataset(dirdataset, 'train')
-    # TODO
-    
-    ### Initialize Generator and Discriminator to specific device
-    ### Along with their optimizers
-    ## for example,
+    epochs = 100
+    G_lr = 2e-3
+    D_lr = 2e-4
+    C_lr = 2e-4
+    optimizer = 'ADAM'
+    beta1 = 0.9
+    beta2 = 0.999
+    batch_size = 64  # modify according to device capability
+    n_labels = 11
+    resolution = 32
+    z_latent_space = 1024
+    log_interval = 100
+    parser = argparse.ArgumentParser(description='command-line arguments example')
+    parser.add_argument('--mode', type=str, help='training/testing')
+    parser.add_argument('-r', type=int, help='resolution')
 
-    G = Generator(n_labels, resolution, z_latent_space)
-    D = Discriminator(n_labels, resolution).to(available_device)
     # TODO
-    
+    args = parser.parse_known_args()[0]
+
+    ### Initialize train and test dataset
+    dt = FragmentDataset("dirdataset", 'train')
+    # TODO
+
+    # Initialize Generator and Discriminator to specific device along with their optimizers
+    G = Generator(n_labels, resolution, z_latent_space).to(available_device)
+    D = Discriminator(1, resolution).to(available_device)
+    C = Discriminator(n_labels, resolution).to(available_device)
+    optimG = optim.Adam(G.parameters(), G_lr)
+    optimD = optim.Adam(D.parameters(), D_lr)
+    optimC = optim.Adam(C.parameters(), C_lr)
+
     ### Call dataloader for train and test dataset
-    
-    ### Implement GAN Loss!!
     # TODO
-    criterion = nn.BCELoss().to(available_device)
-    z, mean, logstd = G.forward_encode(data)
-    # z = torch.cat([z, label_onehot], 1)
-    recon_data = G.forward_decode(z)
-    loss1 = CVAE_loss(recon_data, data, mean, logstd)
+
+    ### Implement GAN Loss!!
+    criterion = nn.BCELoss().to(available_device)  # BCE loss
+    # DSC and Jaccard
+    # TODO
 
     ### Training Loop implementation
     ### You can refer to other papers / github repos for training a GAN
     # TODO
-        # you may call test functions in specific numbers of iterartions
-        # remember to stop gradients in testing!
-        
-        # also you may save checkpoints in specific numbers of iterartions
-        
+    # you may call test functions or save checkpoints in specific numbers of iterations
+    # remember to stop gradients in testing!
+    for epoch in range(epochs):
+        for i, (data, label) in enumerate(dataloader, 0):
+            data = data.to(available_device)
+            label_onehot = torch.zeros((data.shape[0], n_labels)).to(available_device)
+            label_onehot[torch.arange(data.shape[0]), label] = 1
+            # train classifier on 11 types of ceramics (prepare for conditional GAN)
+            out = C(data)
+            truth = label_onehot.to(available_device)
+            lossC = criterion(out, truth)
+            C.zero_grad()
+            lossC.backward()
+            optimC.step()
+            # train Discriminator
+            out = D(data)
+            real_label = torch.ones(batch_size).to(available_device)  # real pieces labelled 1
+            fake_label = torch.zeros(batch_size).to(available_device)  # fake pieces labelled 0
+            lossD_real = criterion(out, real_label)
+
+            z = torch.randn(batch_size, z_latent_space + n_labels).to(available_device)
+            fake_data = G.forward_decode(z)
+            out = D(fake_data)
+            lossD_fake = criterion(out, fake_label)
+
+            lossD = lossD_real + lossD_fake
+            D.zero_grad()
+            lossD.backward()
+            optimD.step()
+            # train Generator
+            z, mean, logstd = G.forward_encode(data)
+            recon_data = G.forward_decode(z)
+            lossG_var_completion = CVAE_loss(recon_data, data, mean, logstd)
+            out = D(recon_data)
+            truth = torch.ones(batch_size).to(available_device)
+            lossG_dis = criterion(out, truth)
+            out = C(recon_data)
+            truth = label_onehot
+            lossG_condition = criterion(out, truth)
+            G.zero_grad()
+            lossG = lossG_var_completion + lossG_dis + lossG_condition
+            lossG.backward()
+            optimG.step()
+            if i % log_interval == 0:
+                test()
+                # TODO
+
 
 if __name__ == "__main__":
     main()
-    

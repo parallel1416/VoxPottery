@@ -26,19 +26,13 @@ def se_block(size, x):
 
 
 class Discriminator(torch.nn.Module):
-    def __init__(self, n_labels, resolution=64):
+    def __init__(self, n_out, resolution=64):
         super(Discriminator, self).__init__()
         # initialize superior inherited class, necessary hyperparams and modules
         # You may use torch.nn.Conv3d(), torch.nn.sequential(), torch.nn.BatchNorm3d() for blocks
         # You may try different activation functions such as ReLU or LeakyReLU.
         # REMEMBER YOU ARE WRITING A DISCRIMINATOR (binary classification) so Sigmoid
         self.scale = resolution // 32
-        self.embedding = nn.Sequential(
-            nn.Embedding(n_labels, 64),
-            nn.Flatten(),
-            nn.Linear(64 * n_labels, 1024),
-            nn.LeakyReLU(0.2)
-        )
         self.model = nn.Sequential(
             nn.Conv3d(1, 32, 5, 1, 2),
             nn.BatchNorm3d(32),
@@ -57,7 +51,7 @@ class Discriminator(torch.nn.Module):
             nn.BatchNorm3d(256),
             nn.LeakyReLU(0.2),
             nn.Flatten(),
-            nn.Linear(self.scale * self.scale * self.scale * 256, 1),
+            nn.Linear(self.scale * self.scale * self.scale * 256, n_out),
             nn.Sigmoid()
         )
 
