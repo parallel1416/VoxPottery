@@ -48,7 +48,12 @@ class FragmentDataset(Dataset):
         self.vox_path = vox_path
         self.transform = transform
         self.dim_size = dim_size
-        self.vox_files = sorted(glob.glob(r'data/*/*/*.vox'))
+        if vox_type == 'train':
+            path = vox_path + "/data/train/*/*.vox"
+            self.vox_files = sorted(glob.glob(path))
+        else:
+            path = vox_path + "/data/test/*/*.vox"
+            self.vox_files = sorted(glob.glob(path))
 
     def __len__(self):
         # may return len(self.vox_files)
