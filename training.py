@@ -12,9 +12,11 @@ from utils.model_utils import *
 import argparse
 from test import *
 from utils import visualize
+from utils.visualize import plot
+
 
 def CVAE_loss(z, x, mean, logstd, ratio):
-    MSEcriterion = nn.MSELoss().to(available_device)
+    MSEcriterion = nn.BCELoss().to(available_device)
     mse = MSEcriterion(x, z)
     var = torch.pow(torch.exp(logstd), 2)
     kld = -0.5 * torch.sum(1 + torch.log(var) - torch.pow(mean, 2) - var)
@@ -37,21 +39,21 @@ def main():
     # 11. test result save dir
     # 12. device!
     # .... (maybe there exists more hyperparams to be appointed)
-    epochs = 100
+    epochs = 10
     G_lr = 2e-3
     D_lr = 2e-4
     C_lr = 2e-4
     optimizer = 'ADAM'
     beta1 = 0.9
     beta2 = 0.999
-    batch_size = 64  # modify according to device capability
+    batch_size = 16  # modify according to device capability
     n_labels = 11
     resolution = 32
     z_latent_space = 64
-    log_interval = 100
+    log_interval = 10
     vi_ratio = 1
-    dis_ratio = 1
-    c_ratio = 0.5
+    dis_ratio = 0.001
+    c_ratio = 0.001
 
     dirdataset = "../VoxPottery"
     available_device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -81,7 +83,8 @@ def main():
 
     ### Implement GAN Loss!!
     # TODO
-    criterion = nn.BCELoss().to(available_device)  # BCE loss
+    criterion_ce = nn.CrossEntropyLoss().to(available_device)  # classifier loss
+    criterion = nn.BCELoss().to(available_device)
     # loss_function = 'BCE'
 
     ### Training Loop implementation
@@ -97,44 +100,51 @@ def main():
             frg = frg.unsqueeze(1).float()
             vox = vox.unsqueeze(1).float()
             whole = vox + frg
+
+            # plot(whole.cpu().detach().numpy(), "./")
             label_onehot = torch.zeros((vox.shape[0], n_labels)).to(available_device)
             label_onehot[torch.arange(vox.shape[0]), label] = 1
             # train classifier on 11 types of ceramics (prepare for conditional GAN)
-            # print("training C")
             out = C(whole)
             truth = label_onehot.to(available_device)
-            lossC = criterion(out, truth)
+            lossC = criterion_ce(out, truth)
+            print("C", lossC)
             C.zero_grad()
             lossC.backward()
             optimC.step()
             # train Discriminator
-            # print("training D")
             out = D(whole)
             real_label = torch.ones(batch_size).to(available_device)  # real pieces labelled 1
             fake_label = torch.zeros(batch_size).to(available_device)  # fake pieces labelled 0
             lossD_real = criterion(out.squeeze(), real_label)
-
+            print(out.squeeze())
+            print("D1", lossD_real)
             z = torch.randn(batch_size, z_latent_space + n_labels).to(available_device)
             fake_data = G.forward_decode(z) + vox
+            plot(fake_data.cpu().detach().numpy(), "./")
             out = D(fake_data)
+            print(out.squeeze())
             lossD_fake = criterion(out.squeeze(), fake_label)
 
+            print("D2", lossD_fake)
             lossD = lossD_real + lossD_fake
             D.zero_grad()
             lossD.backward()
             optimD.step()
             # train Generator
-            # print("training G")
             z, mean, logstd = G.forward_encode(vox)
             z = torch.cat([z, label_onehot], 1)
             recon_data = G.forward_decode(z)
             lossG_var_completion = CVAE_loss(recon_data, vox, mean, logstd, vi_ratio)
+            print("G1", lossG_var_completion)
             out = D(recon_data + vox)
             truth = torch.ones(batch_size).to(available_device)
             lossG_dis = criterion(out.squeeze(), truth)
+            print("G2", lossG_dis)
             out = C(recon_data + vox)
             truth = label_onehot
-            lossG_condition = criterion(out.squeeze(), truth)
+            lossG_condition = criterion(nn.Sigmoid()(out.squeeze()), nn.Sigmoid()(truth))
+            print("G3", lossG_condition)
             G.zero_grad()
             lossG = lossG_var_completion + dis_ratio * lossG_dis + c_ratio * lossG_condition
             lossG.backward()

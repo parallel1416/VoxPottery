@@ -13,16 +13,6 @@ import torch
 import torch.nn as nn
 
 
-def se_block(size, x):
-    out = nn.AvgPool3d(size)(x)
-    reduce = size // 16 if size // 16 > 0 else 1
-    out.reshape((1, 1, size))
-    out = nn.Linear(size, reduce)
-    out = nn.Linear(reduce, size)
-    out = nn.Sigmoid(out)
-    return out
-
-
 class Discriminator(torch.nn.Module):
     def __init__(self, n_out, cube_len=64):
         super(Discriminator, self).__init__()
