@@ -1,7 +1,8 @@
 import glob
 from torch.utils.data import Dataset
 import numpy as np
-import pyvox.parser
+from utils.pyvox import parser
+from utils import pyvox
 
 ## Implement the Voxel Dataset Class
 
@@ -74,8 +75,10 @@ class FragmentDataset(Dataset):
                     for z in range(voxx.shape[2]):
                         voxx[x, y, z] = vox[int(x / rate), int(y / rate), int(z / rate)]
         else:
-            voxx = vox            
-        return voxx
+            voxx = vox
+        voxel = np.zeros((self.dim_size, self.dim_size, self.dim_size))
+        voxel[:voxx.shape[0], :voxx.shape[1], :voxx.shape[2]] = voxx
+        return voxel
 
     def __select_fragment__(self, voxel):
         # randomly select one piece in voxel
@@ -83,12 +86,14 @@ class FragmentDataset(Dataset):
         # hint: find all voxel ids from voxel, and randomly pick one as fragmented data (hint: refer to function below)
         # TODO
         frag_id = np.unique(voxel)[1:]
-        select_frag = np.random.sample(frag_id)
-        for f in frag_id:
-            if f in select_frag:
-                voxel[voxel == f] = 1
-            else:
-                voxel[voxel == f] = 0
+        select_frag = [0]
+        while select_frag[0] == 0:
+            select_frag = [int(np.random.choice(frag_id))]
+        # for f in frag_id:
+        #     if f in select_frag:
+        #         voxel[voxel == f] = 1
+        #     else:
+        #         voxel[voxel == f] = 0
         return voxel, select_frag
         
     def __non_select_fragment__(self, voxel, select_frag):
@@ -119,23 +124,44 @@ class FragmentDataset(Dataset):
         # 4. receive fragment voxel and fragment id 
         # 5. then if self.transform: call transformation function vox & frag
         img_path = self.vox_files[idx]
-        vox = self.__read_vox__(img_path)
-        vox, frag = self.__select_fragment__(vox)
+        for i in range(len(img_path)):
+            if img_path[- i - 1] == '\\':
+                x = img_path[- i - 2]
+                label = int(x)
+                if img_path[- i - 3] == '\\':
+                    break
+                else:
+                    label += 10
+                    break
+        voxel = self.__read_vox__(img_path)
+        voxel, frag_id = self.__select_fragment__(voxel)
+        vox = self.__non_select_fragment__(voxel, frag_id)
+        frag = self.__select_fragment_specific__(voxel, frag_id)[0]
         if self.transform:
-            #frag = self.transform(frag)
+            frag = self.transform(frag)
             vox = self.transform(vox)
-        return frag, vox,  # select_frag, int(label)-1#, img_path
+        return frag, vox, label - 1 # select_frag, int(label)-1#, img_path
 
     def __getitem_specific_frag__(self, idx, select_frag):
         # TODO
         # implement by yourself, similar to __getitem__ but designate frag_id
         img_path = self.vox_files[idx]
-        vox = self.__read_vox__(img_path)
-        vox, frag = self.__select_fragment_specific__(vox, select_frag)
+        for i in range(len(img_path)):
+            if img_path[- i - 1] == '\\':
+                x = img_path[- i - 2]
+                label = int(x)
+                if img_path[- i - 3] == '\\':
+                    break
+                else:
+                    label += 10
+                    break
+        voxel = self.__read_vox__(img_path)
+        vox = self.__non_select_fragment__(voxel, select_frag)
+        frag = self.__select_fragment_specific__(voxel, select_frag)[0]
         if self.transform:
-            #frag = self.transform(frag)
+            frag = self.transform(frag)
             vox = self.transform(vox)
-        return frag, vox,  # select_frag, int(label)-1, img_path
+        return frag, vox, label - 1 # select_frag, int(label)-1, img_path
 
     def __getfractures__(self, idx):
         img_path = self.vox_files[idx]

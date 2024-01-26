@@ -5,8 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from utils.model import Generator, Discriminator
-from utils.visualize import __read_vox_frag__
-from visualize import *
+from utils.visualize import __read_vox_frag__, plot_join
 
 
 def postprocessing(fake, mesh_frag):
@@ -45,8 +44,3 @@ def generate(model, vox_frag):
     mesh_frag = mesh_frag.detach().cpu().numpy()
     return fake, mesh_frag, output_g_encode
 
-
-mo = Generator(11, 32, 1024).to(available_device)
-vox3 = __read_vox_frag__('test.vox', 3)
-fak, frag, _ = generate(mo, vox3)
-plot_join(fak, frag)
