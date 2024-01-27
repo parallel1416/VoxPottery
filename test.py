@@ -11,36 +11,50 @@ from utils.FragmentDataset import FragmentDataset
 from utils.model import Generator, Discriminator
 from utils.visualize import plot_join
 
-def metric(out, frg):
-    A = 0
-    B = 0
-    S = 0
+
+def DSC(out, frg):
+    dis = np.zeros((frg.shape[0]))
+    for i in range(frg.shape[0]):
+        A = 0
+        B = 0
+        S = 0
+        eps = 1e-4
+        for x in range(frg.shape[2]):
+            for y in range(frg.shape[3]):
+                for z in range(frg.shape[4]):
+                    if out[i, 0, x, y, z] < eps:
+                        A += 1
+                    elif frg[i, 0, x, y, z] < eps:
+                        S += 1
+                    if frg[i, 0, x, y, z] < eps:
+                        B += 1
+        S += A
+        dis[i] = S / (A + B)
+    return np.mean(dis)
+
+
+def JD(out, frg):
+    U = 0
+    N = 0
     for x in range(frg.shape[0]):
         for y in range(frg.shape[1]):
             for z in range(frg.shape[2]):
-                if out[x, y, z] != 0:
-                    A += 1
-                elif frg[x, y, z] != 0:
-                    S += 1
-                if frg[x, y, z] != 0:
-                    B += 1
-    S += A
-    return 2 * S / (A + B)
+                if out[x, y, z] != 0 or frg[x, y, z] != 0:
+                    U += 1
+                if out[x, y, z] != 0 and frg[x, y, z] == out[x, y, z]:
+                    N += 1
 
-def test():
+    return 1 - (U - N) / U
+
+
+def test(resolution, batch_size, metric, G):
     # TODO
     # You can also implement this function in training procedure, but be sure to
     # evaluate the model on test set and reserve the option to save both quantitative
     # and qualitative (generated .vox or visualizations) images.   
 
     # create testing dataset
-    n_labels = 11
-    resolution = 32
-    z_latent_space = 64
-    metrics = ['DSC', 'JD', 'MSE']
-    batch_size = 64  # modify according to device capability
     available_device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    G = Generator(n_labels, resolution, z_latent_space).to(available_device)
     dirdataset = "../VoxPottery"
     save_dir = "../visualization"
     dtest = FragmentDataset(dirdataset, 'test', resolution)
@@ -48,8 +62,7 @@ def test():
 
     correct = 0
     total = 0
-    # test
-        # forward
+
     with torch.no_grad():
         for data in testloader:
             frg, vox, label = data
@@ -57,11 +70,12 @@ def test():
             frg = frg.to(available_device)
 
             out = G.forward(vox)
-            dis = metric(out, frg)
+            if metric == 'DSC':
+                dis = DSC(out, frg)
+            elif metric == 'JD':
+                dis = JD(out, frg)
             correct += dis
             total += 1
             plot_join(vox, out)
         rate = 100 * correct // total
-        print(f'Accuracy of the network: {rate} %')
-
-    #return
+        return rate

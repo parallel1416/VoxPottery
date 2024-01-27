@@ -13,13 +13,15 @@ import argparse
 from test import *
 from utils import visualize
 from utils.visualize import plot
+from torch.utils.tensorboard import SummaryWriter
 
 
 def CVAE_loss(z, x, mean, logstd, ratio):
-    MSEcriterion = nn.BCELoss().to(available_device)
-    mse = MSEcriterion(x, z)
+    criterion = nn.BCELoss().to(available_device)
+    mse = criterion(x, z)
     var = torch.pow(torch.exp(logstd), 2)
     kld = -0.5 * torch.sum(1 + torch.log(var) - torch.pow(mean, 2) - var)
+    print("loss", mse, kld)
     return mse + kld * ratio
 
 
@@ -51,13 +53,15 @@ def main():
     resolution = 32
     z_latent_space = 64
     log_interval = 10
-    vi_ratio = 1
-    dis_ratio = 0.001
-    c_ratio = 0.001
+    vi_ratio = 0.001
+    dis_ratio = 0.5
+    c_ratio = 0.4
+    metric = 'DSC'
 
     dirdataset = "../VoxPottery"
     available_device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
+    # available_device = 'cpu'
+    writer = SummaryWriter()
     parser = argparse.ArgumentParser()
     parser.add_argument('--mode', type=str, help='training/testing')
     parser.add_argument('-r', type=int, help='resolution')
@@ -69,7 +73,7 @@ def main():
     print("Data initialized")
 
     ### Initialize Generator and Discriminator to specific device
-    G = Generator(n_labels, resolution, z_latent_space).to(available_device)
+    G = Generator(n_labels, resolution, z_latent_space, available_device).to(available_device)
     D = Discriminator(1, resolution).to(available_device)
     C = Discriminator(n_labels, resolution).to(available_device)
     optimG = optim.Adam(G.parameters(), G_lr, (beta1, beta2))
@@ -91,24 +95,24 @@ def main():
     ### You can refer to other papers / github repos for training a GAN
     # TODO
     print("Start training")
+    log_x = 0
     for epoch in range(epochs):
         lossG = 0
         for i, data in enumerate(trainloader, 0):
             frg, vox, label = data
+            # print(torch.sum(vox), torch.sum(frg))
             vox = vox.to(available_device)
             frg = frg.to(available_device)
             frg = frg.unsqueeze(1).float()
             vox = vox.unsqueeze(1).float()
             whole = vox + frg
-
-            # plot(whole.cpu().detach().numpy(), "./")
             label_onehot = torch.zeros((vox.shape[0], n_labels)).to(available_device)
             label_onehot[torch.arange(vox.shape[0]), label] = 1
             # train classifier on 11 types of ceramics (prepare for conditional GAN)
             out = C(whole)
             truth = label_onehot.to(available_device)
             lossC = criterion_ce(out, truth)
-            print("C", lossC)
+            # print("C", lossC)
             C.zero_grad()
             lossC.backward()
             optimC.step()
@@ -117,16 +121,16 @@ def main():
             real_label = torch.ones(batch_size).to(available_device)  # real pieces labelled 1
             fake_label = torch.zeros(batch_size).to(available_device)  # fake pieces labelled 0
             lossD_real = criterion(out.squeeze(), real_label)
-            print(out.squeeze())
-            print("D1", lossD_real)
+            # print(out.squeeze())
+            # print("D1", lossD_real)
             z = torch.randn(batch_size, z_latent_space + n_labels).to(available_device)
             fake_data = G.forward_decode(z) + vox
-            plot(fake_data.cpu().detach().numpy(), "./")
+            # plot(fake_data.cpu().detach().numpy(), "./")
             out = D(fake_data)
-            print(out.squeeze())
+            # print(out.squeeze())
             lossD_fake = criterion(out.squeeze(), fake_label)
 
-            print("D2", lossD_fake)
+            # print("D2", lossD_fake)
             lossD = lossD_real + lossD_fake
             D.zero_grad()
             lossD.backward()
@@ -135,16 +139,38 @@ def main():
             z, mean, logstd = G.forward_encode(vox)
             z = torch.cat([z, label_onehot], 1)
             recon_data = G.forward_decode(z)
-            lossG_var_completion = CVAE_loss(recon_data, vox, mean, logstd, vi_ratio)
-            print("G1", lossG_var_completion)
+            '''
+            f = frg.squeeze().cpu().detach().numpy()
+            fake = recon_data.squeeze().cpu().detach().numpy()
+            for w in range(16):
+                for ii in range(32):
+                    for j in range(32):
+                        for k in range(32):
+                            if fake[w][ii][j][k]>1 or fake[w][ii][j][k]<0 or f[w][ii][j][k]>1 or f[w][ii][j][k]<0:
+                                print("NO!")
+                                return
+            '''
+            # plot(fake, './w')
+            lossG_var_completion = CVAE_loss(recon_data, frg, mean, logstd, vi_ratio)
+            # print("G1", lossG_var_completion.cpu().item())
+            if lossG_var_completion.cpu().item() < 1:
+
+                v = vox.squeeze().cpu().detach().numpy()[0]
+                f = frg.squeeze().cpu().detach().numpy()[0]
+                fake = recon_data.squeeze().cpu().detach().numpy()[0]
+                print(np.sum(v), np.sum(f), np.sum(fake))
+                
+                #plot(v, './v')
+                #plot(f, './f')
+
             out = D(recon_data + vox)
             truth = torch.ones(batch_size).to(available_device)
             lossG_dis = criterion(out.squeeze(), truth)
-            print("G2", lossG_dis)
+            # print("G2", lossG_dis)
             out = C(recon_data + vox)
             truth = label_onehot
             lossG_condition = criterion(nn.Sigmoid()(out.squeeze()), nn.Sigmoid()(truth))
-            print("G3", lossG_condition)
+            # print("G3", lossG_condition)
             G.zero_grad()
             lossG = lossG_var_completion + dis_ratio * lossG_dis + c_ratio * lossG_condition
             lossG.backward()
@@ -152,9 +178,33 @@ def main():
             # print("training loop complete")
             if i % log_interval == 0:
                 print("i =", i, ", loss =", lossG)
-                # test()
+                writer.add_scalar("Loss/train", lossG.cpu().item(), log_x)
+                log_x += 1
         if epoch % 10 == 0:
             print("EPOCH", epoch, lossG)
+            correct = 0
+            total = 0
+
+            with torch.no_grad():
+                for data in testloader:
+                    frg, vox, label = data
+                    vox = vox.unsqueeze(1).float().to(available_device)
+                    frg = frg.unsqueeze(1).float().to(available_device)
+                    label_onehot = torch.zeros((vox.shape[0], n_labels)).to(available_device)
+                    label_onehot[torch.arange(vox.shape[0]), label] = 1
+                    z, mean, logstd = G.forward_encode(vox)
+                    z = torch.cat([z, label_onehot], 1)
+                    out = G.forward_decode(z)
+                    if metric == 'DSC':
+                        dis = DSC(out, frg)
+                    elif metric == 'JD':
+                        dis = JD(out, frg)
+                    print(dis)
+                    correct += dis
+                    total += 1
+                    plot_join(out.squeeze().cpu().detach().numpy()[0], frg.squeeze().cpu().detach().numpy()[0])
+                rate = 100 * correct // total
+                writer.add_scalar("Accuracy/test", rate, epoch)
 
     print("Finish training")
     PATH = './Generator.pth'

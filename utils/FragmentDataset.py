@@ -134,9 +134,10 @@ class FragmentDataset(Dataset):
                     label += 10
                     break
         voxel = self.__read_vox__(img_path)
+        v = self.__read_vox__(img_path)
         voxel, frag_id = self.__select_fragment__(voxel)
         vox = self.__non_select_fragment__(voxel, frag_id)
-        frag = self.__select_fragment_specific__(voxel, frag_id)[0]
+        frag = self.__select_fragment_specific__(v, frag_id)[0]
         if self.transform:
             frag = self.transform(frag)
             vox = self.transform(vox)
@@ -156,8 +157,9 @@ class FragmentDataset(Dataset):
                     label += 10
                     break
         voxel = self.__read_vox__(img_path)
+        v = self.__read_vox__(img_path)
         vox = self.__non_select_fragment__(voxel, select_frag)
-        frag = self.__select_fragment_specific__(voxel, select_frag)[0]
+        frag = self.__select_fragment_specific__(v, select_frag)[0]
         if self.transform:
             frag = self.transform(frag)
             vox = self.transform(vox)

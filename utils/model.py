@@ -62,16 +62,16 @@ class Generator(torch.nn.Module):
             nn.Conv3d(1, 32, 5, 1, 2),
             nn.BatchNorm3d(32),
             nn.LeakyReLU(0.2),
-            nn.Conv3d(32, 32, 3, 2, 1),
+            nn.Conv3d(32, 32, 4, 2, 1),
             nn.BatchNorm3d(32),
             nn.LeakyReLU(0.2),
-            nn.Conv3d(32, 64, 3, 2, 1),
+            nn.Conv3d(32, 64, 4, 2, 1),
             nn.BatchNorm3d(64),
             nn.LeakyReLU(0.2),
-            nn.Conv3d(64, 128, 3, 2, 1),
+            nn.Conv3d(64, 128, 4, 2, 1),
             nn.BatchNorm3d(128),
             nn.LeakyReLU(0.2),
-            nn.Conv3d(128, 256, 3, 2, 1),
+            nn.Conv3d(128, 256, 4, 2, 1),
             nn.BatchNorm3d(256),
             nn.LeakyReLU(0.2)
         )
@@ -106,13 +106,14 @@ class Generator(torch.nn.Module):
             nn.ConvTranspose3d(32, 32, 4, 2, 1),
             nn.BatchNorm3d(32),
             nn.ReLU(),
-            nn.ConvTranspose3d(32,1,5,1,2)
+            nn.Conv3d(32, 1, 5, 1, 2),
+            nn.Sigmoid()
         )
         self.device = device
 
     def reparameterize(self, mean, logvar):
         eps = torch.randn(mean.shape).to(self.device)
-        z = mean + eps * torch.exp(logvar)
+        z = mean + eps * torch.exp(logvar).to(self.device)
         return z
 
     def forward_encode(self, x):

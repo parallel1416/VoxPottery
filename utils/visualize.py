@@ -196,7 +196,7 @@ def plot_join(vox_1, vox_2):
         append_list.append(data)
     fig = go.Figure(append_list)
     fig.update_layout()
-
+    fig.write_html('./plot.html')
     fig.show()
 
 
